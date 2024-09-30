@@ -1,0 +1,189 @@
+---
+title: "P8122hw2_zl2746"
+author: "Ze Li"
+output: pdf_document
+---
+
+```{r library}
+library(ggplot2)
+library(remotes)
+library(permute)
+# install_version("ri", "0.9")
+library(ri)
+```
+
+```{r load data}
+light=read.csv("light.csv")
+head(light)
+summary(light)
+```
+
+### part 1: Plot the outcome by treatment group.
+
+```{r Q1}
+table(light$Light)
+ggplot(light, aes(x = Light, y = BMGain, fill = Light)) +
+  geom_boxplot() +
+  labs(title = "Body Mass Gain by Light",
+       x = "Light",
+       y = "Body Mass Gain") +
+  theme_minimal()
+
+# Outcome = BMGain & treatment = light
+light_LL <- subset(light, Light == 'LL')
+ggplot(light_LL, aes(x = BMGain)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Body Mass Gain",
+       x = "Body Mass Gain",
+       y = "Frequency") +
+  theme_minimal()
+
+light_DM <- subset(light, Light == 'DM')
+ggplot(light_DM, aes(x = BMGain)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Body Mass Gain",
+       x = "Body Mass Gain",
+       y = "Frequency") +
+  theme_minimal()
+
+light_LD <- subset(light, Light == 'LD')
+ggplot(light_LD, aes(x = BMGain)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Body Mass Gain",
+       x = "Body Mass Gain",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+### part 2: Subset the data to only consider control = dark & treat = bright.
+
+```{r Q2}
+light_LLLD <- subset(light, Light %in% c('LL','LD'))
+ggplot(light_LLLD, aes(x = Light, y = BMGain, fill = Light)) +
+  geom_boxplot(color = "black") +
+  scale_fill_manual(values = c("LD" = "lightcoral", "LL" = "lightblue")) +
+  labs(title = "Body Mass Gain by Treatment and Control Group",
+       x = "Group (Control: LD, Treatment: LL)",
+       y = "Body Mass Gain") +
+  theme_minimal()
+```
+
+### part 3: Set up the data such that everything you will need has generic names
+
+What quantities will you need to evaluate the causal effect of light at night on weight gain?
+
+Treatment Indicator (A): A binary variable indicating the treatment group (1 for bright light (LL) and 0 for dark light (LD)).
+
+Outcome Variable (Y): The variable measuring the outcome of interest, which in this case is weight gain.
+
+Treatment Effect (T_stat): Compute the difference in means between the treatment (LL) and control groups (LD).
+
+Randomization Inference (Abold): To assess the significance of the observed treatment effect, generate a distribution of treatment effects under the null hypothesis of no causal effect. This involves generating permutations of the treatment assignment.
+
+Distribution of Treatment Effects (rdist): For each permutation of the treatment assignment, calculate the treatment effect.
+
+p-value: Determine the p-value by comparing the observed treatment effect to the distribution of permuted treatment effects.
+
+```{r Q3}
+table(light$Light)
+# Treatment Indicator (A)
+A <- light_LLLD$Light
+A <- ifelse(A == "LL", 1, ifelse(A == "LD", 0, A))|>
+  as.numeric()
+A
+# Outcome Variable (Y)
+Y <- light_LLLD$BMGain
+Y
+# Treatment Effect (T_stat)
+T_stat <- mean(Y[A == 1]) - mean(Y[A == 0])
+T_stat
+# Randomization Inference (Abold)
+Abold <- genperms(A,maxiter = 12870)
+Abold <- genperms(A)
+Abold[, 1:6]
+# Distribution of Treatment Effects (rdist)
+rdist <- rep(NA, times = ncol(Abold))
+for (i in 1:ncol(Abold)) {
+  A_tilde <- Abold[, i]
+  rdist[i] <- mean(Y[A_tilde == 1]) - mean(Y[A_tilde == 0])
+}
+rdist
+hist(rdist)
+# p-value
+pval <- mean(rdist >= T_stat)
+pval
+quant <- quantile(rdist,probs = 1-pval)
+hist(rdist)
+abline(v = quant,col="red")
+```
+
+### part 4: the statistic to be the difference in means between the two treatment groups.
+
+```{r Q4}
+# Treatment Effect (T_stat)
+T_stat <- mean(Y[A == 1]) - mean(Y[A == 0])
+T_stat
+```
+
+### part 5: How many different possibilities are there for A? Enumerate all of these possibilities in a matrix.
+
+```{r Q5}
+n <- length(A)
+k <- sum(A) 
+A_matrix <- t(combn(n, k, function(x) {
+  as.integer(1:n %in% x)
+}))
+
+num_pro <- choose(n, k)
+num_pro
+```
+
+### part 6: State the sharp null hypothesis of no difference. Calculate the test statistic under one of these possibilities for A (the first one), under the sharp null hypothesis.
+
+The sharp null hypothesis states that there is no causal effect of the treatment (light at night) on the outcome (weight gain). 
+
+H0: miu_LL = miu_LD
+
+where miu_LL is the mean weight gain in the treatment group (LL)
+and miu_LD is the mean weight gain in the control group (LD).
+
+```{r Q6}
+A_first <- A_matrix[1, ]
+A_first
+T_stat_sharpnull <- mean(Y[A_first == 1]) - mean(Y[A_first == 0])
+T_stat_sharpnull
+```
+
+### part 7: Generate the exact randomization distribution for T, under the sharp null hypothesis of no difference.
+
+```{r Q7}
+T_stats_random <- numeric(nrow(A_matrix)) 
+
+for (i in 1:nrow(A_matrix)) {
+  A_tilde <- A_matrix[i, ]  # Each possible treatment assignment
+  T_stats_random[i] <- mean(Y[A_tilde == 1]) - mean(Y[A_tilde == 0]) }
+```
+
+
+### part 8: Plot this distribution, and mark the observed test statistic.
+
+```{r Q8}
+hist(T_stats_random, 
+     main="Randomization Distribution of T",
+     xlab="Means difference", 
+     breaks=10, 
+     col="lightblue", 
+     border="black")
+abline(v = T_stat, col = "red", lwd = 2, lty = 2)
+```
+
+### part 9: Calculate the exact p-value, based on this distribution.
+
+```{r Q9}
+p_value_sharp <- mean(abs(T_stats_random) >= abs(T_stat))
+p_value_sharp
+```
+
+### part 10: What do you conclude?
+
+Since the p-value is smaller than 0.05, we can reject the sharp null hypothesis. It suggests strong statistical evidence that light exposure at night has a significant impact on weight gain in mice.
